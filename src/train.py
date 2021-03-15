@@ -123,7 +123,7 @@ for epoch in range(1, epochs+1):
 
 # Save model with current date
 now = datetime.now()
-d = now.strftime("%Y_%b_%d")
+d = now.strftime("%Y_%b_%d_%Hh_%mm")
 PATH = '../models/model_ces_'+d+'.pt'
 torch.save(model.state_dict(), PATH)
 
