@@ -1,64 +1,65 @@
 # Torch
+import torch
 import torchvision
+from torchvision.models.detection.faster_rcnn import FastRCNNPredictor, fasterrcnn_resnet50_fpn
 # Image Plots
-from matplotlib import pyplot as plt
-import matplotlib.patches as patches
-
-# Data managements
+from PIL import Image, ImageDraw, ExifTags, ImageColor, ImageFont
+# Data management
 import numpy as np
 import time
 
 
-def draw_bounding_boxes(img_tensor, bboxes):
-    """Draws bounding boxes in given images.
+def draw_bounding_boxes(img_tensor, target=None, prediction=None):
+    """Draws bounding boxes in given images. Displays them
 
-        Args:
+        Inputs:
           img:
             Image in tensor format.
-          bboxes:
-            list of lists with bounding boxes coordinates (xmin, ymin, xmax, ymax)
+          target:
+            target dictionary containing bboxes list wit format -> [xmin, ymin, xmax, ymax]
 
         Returns:
           None
         """
 
-    # Convert inputs from tensors to np arrays
-    img = img_tensor.numpy().transpose()
-    bboxes = bboxes.numpy()
+    img = torchvision.transforms.ToPILImage()(img_tensor)
 
     # fetching the dimensions
-    wid, hgt, c = img.shape
+    wid, hgt = img.size
     print(str(wid) + "x" + str(hgt))
 
-    # Create figure and axes
-    fig, ax = plt.subplots()
+    # Img to draw in
+    draw = ImageDraw.Draw(img)
 
-    # Display the image
-    ax.imshow(img)
+    if target:
+        target_bboxes = target['boxes'].numpy().tolist()
+        target_labels = decode_labels(target['labels'].numpy())
 
-    for coordinates in bboxes:
-        x = coordinates[0]
-        y = coordinates[1]
-        width = coordinates[2] - coordinates[0]
-        height = coordinates[3] - coordinates[1]
+        for i in range(len(target_bboxes)):
+            # Create Rectangle patches and add the patches to the axes
+            draw.rectangle(target_bboxes[i], fill=None, outline='green', width=1)
+            draw.text(target_bboxes[i][:2], target_labels[i], fill='green', font=None, anchor=None, spacing=4,
+                      align='left', direction=None, features=None, language=None, stroke_width=0, stroke_fill=None,
+                      embedded_color=False)
 
-        # Create Rectangle patches and add the patches to the axes
-        rect = patches.Rectangle((x, y), width, height, linewidth=2, edgecolor='r', facecolor='none', fill=False)
-        ax.add_patch(rect)
+    if prediction:
+        prediction_bboxes = prediction['boxes'].detach().cpu().numpy().tolist()
+        prediction_labels = decode_labels(prediction['labels'].detach().cpu().numpy())
+        for i in range(len(prediction_bboxes)):
+            # Create Rectangle patches and add the patches to the axes
+            draw.rectangle(prediction_bboxes[i], fill=None, outline='red', width=1)
+            draw.text(prediction_bboxes[i][:2], prediction_labels[i], fill='red', font=None, anchor=None, spacing=4,
+                      align='left', direction=None, features=None, language=None, stroke_width=0, stroke_fill=None,
+                      embedded_color=False)
 
-        # Show cropped bb
-        # image_croped = img.crop((x, y, x+width, y+height))
-        # fig = plt.figure()
-        # plt.imshow(image_croped)
-
-    plt.imshow(img)
-
+    img.show()
 
 
 def encoded_labels(lst_labels):
     """Encodes label classes from string to integers.
 
         Labels are encoded accordingly:
+            - background => 0
             - with_mask => 1
             - mask_weared_incorrect => 2
             - without_mask => 3
@@ -78,16 +79,85 @@ def encoded_labels(lst_labels):
             code = 1
         elif label == "mask_weared_incorrect":
             code = 2
-        else:
+        elif label == "without_mask":
             code = 3
+        else:
+            code = 0
         encoded.append(code)
     return encoded
 
 
-def train_model(model, loader, optimizer, scheduler, epochs, device):
-    # Train the model
-    loss_list = []
+def decode_labels(lst_labels):
+    """
+    Decode label classes from integers to strings.
+    Labels are encoded accordingly:
+        - background => 0
+        - with_mask => 1
+        - mask_weared_incorrect => 2
+        - without_mask => 3
 
+    Args:
+      lst_labels:
+        A list with classes in integer format (e.g. [1, 2, ...]).
+
+    Returns:
+        A list with strings that represent each class.
+    """
+
+    labels=[]
+    for code in lst_labels:
+        if code == 1:
+            label = "with_mask"
+        elif code == 2:
+            label = "mask_weared_incorrect"
+        elif code == 3:
+            label = "without_mask"
+        else:
+            label = 'background'
+        labels.append(label)
+    return labels
+
+
+def build_model(nclasses):
+    """
+    Builds model. Uses Faster R-CNN pre-trained on COCO dataset.
+
+    Args:
+      nclasses:
+        number of classes
+
+    Return:
+      model: Faster R-CNN pre-trained model
+    """
+    # load pre-trained model on COCO
+    model = fasterrcnn_resnet50_fpn(pretrained=False)
+
+    # get the number of input features for the classifier
+    in_features = model.roi_heads.box_predictor.cls_score.in_features
+
+    # replace the pre-trained head with a new one
+    model.roi_heads.box_predictor = FastRCNNPredictor(in_features, nclasses)
+
+    return model
+
+
+def train_model(model, loader, optimizer, scheduler, epochs, device):
+    """
+    Args:
+        model: -
+        loader: -
+        optimizer: -
+        scheduler: -
+        epochs: -
+        device: -
+
+    Returns:
+        model: -
+        loss_list: list with mean loss per epoch. Epoch 1 is in idx 0.
+    """
+    # Create a loss list to keep epoch average loss
+    loss_list = []
+    # Epochs
     for epoch in range(epochs):
         print('Starting epoch...... {}/{} '.format(epoch + 1, epochs))
         iteration = 0
@@ -104,6 +174,7 @@ def train_model(model, loader, optimizer, scheduler, epochs, device):
             model.train()
 
             # Output of model returns loss and detections
+            optimizer.zero_grad()
             output = model(images, targets)
 
             # Calculate Cost
@@ -113,15 +184,14 @@ def train_model(model, loader, optimizer, scheduler, epochs, device):
             print('')
 
             # Update optimizer and learning rate
-            optimizer.zero_grad()
             losses.backward()
             optimizer.step()
-            scheduler.step()
-
             iteration += 1
             print('Iteration: {:d} --> Loss: {:.3f}'.format(iteration, loss_value))
-        end = time.time()
 
+        end = time.time()
+        # update scheduler
+        scheduler.step()
         # print the loss of epoch
         epoch_loss = np.mean(loss_sub_list)
         loss_list.append(epoch_loss)
@@ -131,9 +201,51 @@ def train_model(model, loader, optimizer, scheduler, epochs, device):
 
 
 def apply_nms(orig_prediction, iou_thresh):
+    """
+    Applies non max supression and eliminates low score bounding boxes.
+
+      Args:
+        orig_prediction: the model output. A dictionary containing element scores and boxes.
+        iou_thresh: Intersection over Union threshold. Every bbox prediction with an IoU greater than this value
+                      gets deleted in NMS.
+
+      Returns:
+        final_prediction: Resulting prediction
+    """
+
     # torchvision returns the indices of the bboxes to keep
     keep = torchvision.ops.nms(orig_prediction['boxes'], orig_prediction['scores'], iou_thresh)
 
+    # Keep indices from nms
+    final_prediction = orig_prediction
+    final_prediction['boxes'] = final_prediction['boxes'][keep]
+    final_prediction['scores'] = final_prediction['scores'][keep]
+    final_prediction['labels'] = final_prediction['labels'][keep]
+
+    return final_prediction
+
+
+def remove_low_score_bb(orig_prediction, score_thresh):
+    """
+    Eliminates low score bounding boxes.
+
+    Args:
+        orig_prediction: the model output. A dictionary containing element scores and boxes.
+        score_thresh: Boxes with a lower confidence score than this value get deleted
+
+    Returns:
+        final_prediction: Resulting prediction
+    """
+
+    # Remove low confidence scores according to given threshold
+    index_list_scores = []
+    scores = orig_prediction['scores'].detach().cpu().numpy()
+    for i in range(len(scores)):
+        if scores[i] > score_thresh:
+            index_list_scores.append(i)
+    keep = torch.tensor(index_list_scores)
+
+    # Keep indices from high score bb
     final_prediction = orig_prediction
     final_prediction['boxes'] = final_prediction['boxes'][keep]
     final_prediction['scores'] = final_prediction['scores'][keep]
@@ -143,4 +255,5 @@ def apply_nms(orig_prediction, iou_thresh):
 
 
 def collate_fn(batch):
+    # Collate function for Dataloader
     return tuple(zip(*batch))
