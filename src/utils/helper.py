@@ -73,7 +73,7 @@ def encoded_labels(lst_labels):
                 A list with integers that represent each class.
             """
 
-    encoded=[]
+    encoded = []
     for label in lst_labels:
         if label == "with_mask":
             code = 1
@@ -104,7 +104,7 @@ def decode_labels(lst_labels):
         A list with strings that represent each class.
     """
 
-    labels=[]
+    labels = []
     for code in lst_labels:
         if code == 1:
             label = "with_mask"
@@ -257,3 +257,45 @@ def remove_low_score_bb(orig_prediction, score_thresh):
 def collate_fn(batch):
     # Collate function for Dataloader
     return tuple(zip(*batch))
+
+
+def df_add_epoch_log(df, epoch, training_results):
+    df = df.append({'epoch': epoch, 'lr': training_results.meters['lr'], 'time': 0,
+                    'loss_avg': training_results.meters['loss'].avg,
+                    'loss_median': training_results.meters['loss'].median,
+                    'loss_max': training_results.meters['loss'].max,
+                    'loss_min': min(training_results.meters['loss'].deque),
+                    'loss_bb_regression_avg': training_results.meters['loss_box_reg'].avg,
+                    'loss_bb_regression_median': training_results.meters['loss_box_reg'].median,
+                    'loss_bb_regression_max': training_results.meters['loss_box_reg'].max,
+                    'loss_bb_regression_min': min(training_results.meters['loss_box_reg'].deque),
+                    'loss_classifier_avg': training_results.meters['loss_classifier'].avg,
+                    'loss_classifier_median': training_results.meters['loss_classifier'].median,
+                    'loss_classifier_max': training_results.meters['loss_classifier'].max,
+                    'loss_classifier_min': min(training_results.meters['loss_classifier'].deque),
+                    'loss_rpn_bb_regression_avg': training_results.meters['loss_rpn_box_reg'].avg,
+                    'loss_rpn_bb_regression_median': training_results.meters['loss_rpn_box_reg'].median,
+                    'loss_rpn_bb_regression_max': training_results.meters['loss_rpn_box_reg'].max,
+                    'loss_rpn_bb_regression_min': min(training_results.meters['loss_rpn_box_reg'].deque)}, ignore_index=True)
+    return df
+
+
+def df_add_iteration_log(df, epoch, iteration, training_results):
+    df = df.append({'epoch': epoch, 'iteration': iteration, 'lr': training_results.meters['lr'], 'time': 0,
+                    'loss_avg': training_results.meters['loss'].avg,
+                    'loss_median': training_results.meters['loss'].median,
+                    'loss_max': training_results.meters['loss'].max,
+                    'loss_min': min(training_results.meters['loss'].deque),
+                    'loss_bb_regression_avg': training_results.meters['loss_box_reg'].avg,
+                    'loss_bb_regression_median': training_results.meters['loss_box_reg'].median,
+                    'loss_bb_regression_max': training_results.meters['loss_box_reg'].max,
+                    'loss_bb_regression_min': min(training_results.meters['loss_box_reg'].deque),
+                    'loss_classifier_avg': training_results.meters['loss_classifier'].avg,
+                    'loss_classifier_median': training_results.meters['loss_classifier'].median,
+                    'loss_classifier_max': training_results.meters['loss_classifier'].max,
+                    'loss_classifier_min': min(training_results.meters['loss_classifier'].deque),
+                    'loss_rpn_bb_regression_avg': training_results.meters['loss_rpn_box_reg'].avg,
+                    'loss_rpn_bb_regression_median': training_results.meters['loss_rpn_box_reg'].median,
+                    'loss_rpn_bb_regression_max': training_results.meters['loss_rpn_box_reg'].max,
+                    'loss_rpn_bb_regression_min': min(training_results.meters['loss_rpn_box_reg'].deque)}, ignore_index=True)
+    return df

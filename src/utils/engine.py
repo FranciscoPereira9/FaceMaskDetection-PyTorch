@@ -10,8 +10,7 @@ import src.utils.helper as helper
 from src.utils.evaluate import compute_mAP
 
 
-
-def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq):
+def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq, df):
     """
     Trains one epoch.
 
@@ -21,7 +20,16 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq):
         data_loader: -
         device: -
         epoch: -
-        print_freq: int. Number of iterations to wait and print info.
+        print_freq: int. Number of iterations to wait and print info
+        df: empty pandas dataframe with the following columns ->
+                                ['epoch', 'iteration', 'lr', 'time',
+                                'loss_avg', 'loss_median', 'loss_max', 'loss_min',
+                                'loss_bb_regression_avg', 'loss_bb_regression_median',
+                                'loss_bb_regression_max', 'loss_bb_regression_min',
+                                'loss_classifier_avg', 'loss_classifier_median',
+                                'loss_classifier_max', 'loss_classifier_min',
+                                'loss_rpn_bb_regression_avg', 'loss_rpn_bb_regression_median',
+                                'loss_rpn_bb_regression_max', 'loss_rpn_bb_regression_min']
 
     Returns:
         A MetricLogger object containing epoch information.
@@ -35,6 +43,7 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq):
     metric_logger = utils.MetricLogger(delimiter=" | ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
+    iteration = 0
 
     lr_scheduler = None
     # Uses default scheduler for the first epoch
@@ -73,7 +82,12 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq):
         metric_logger.update(loss=losses_reduced, **loss_dict_reduced)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
-    return metric_logger
+        # Add dataframe row with iteration metric logs
+        df = helper.df_add_iteration_log(df, epoch, iteration, metric_logger)
+
+        iteration += 1
+
+    return metric_logger, df
 
 
 def _get_iou_types(model):

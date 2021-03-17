@@ -8,15 +8,23 @@ from DatasetClass import MyDataset
 from datetime import datetime
 from utils.engine import train_one_epoch, evaluate
 import utils.helper as helper
+import src.utils.utils as utils
 
+# ----------------------------------------------- Default Arguments & Variables ----------------------------------------
 
-# ----------------------------------------------- Default Arguments ----------------------------------------------------
-
+# File name of this runtime
+now = datetime.now()
+filename = now.strftime("%Y_%b_%d_%Hh_%mm")
+# Make dir to save the resulting data from training
+PATH = '../models/model_ces_' + filename
+utils.mkdir(PATH)
+# Defaults
 batch_size = 1
 epochs = 1
 optimizer_type = 'sgd'
 lr = 0.1
-
+# Aux
+best_mAP = 0
 
 # ----------------------------------------------- Parsed Arguments -----------------------------------------------------
 
@@ -33,25 +41,24 @@ parser.add_argument("--learning_rate", help="Set learning rate.")
 args = parser.parse_args()
 
 # Check arguments
-print(33*"-")
+print(33 * "-")
 if args.batch_size:
     batch_size = int(args.batch_size)
 out = "| Batch size: " + str(batch_size)
-print(out, (30 - len(out))*' ', '|')
+print(out, (30 - len(out)) * ' ', '|')
 if args.epochs:
     epochs = int(args.epochs)
 out = "| Number of epochs: " + str(epochs)
-print(out, (30 - len(out))*' ', '|')
+print(out, (30 - len(out)) * ' ', '|')
 if args.optimizer:
     optimizer_type = args.optimizer
 out = '| Optimizer type: ' + optimizer_type
-print(out, (30 - len(out))*' ', '|')
+print(out, (30 - len(out)) * ' ', '|')
 if args.learning_rate:
     lr = float(args.learning_rate)
 out = '| Learning rate: ' + str(lr)
-print(out, (30 - len(out))*' ', '|')
-print(33*"-")
-
+print(out, (30 - len(out)) * ' ', '|')
+print(33 * "-")
 
 # ----------------------------------------------- Dataset Files --------------------------------------------------------
 
@@ -65,7 +72,6 @@ img_directory = '../images'
 # Listed directory
 img_files = os.listdir(img_directory)
 
-
 # ----------------------------------------------- Create Data Pipeline -------------------------------------------------
 
 # Training Data
@@ -75,7 +81,6 @@ loader_train = DataLoader(dataset_train, batch_size=batch_size, shuffle=True, co
 # Validation Data
 dataset_validation = MyDataset(ann_directory, img_directory, mode='validation')
 loader_validation = DataLoader(dataset_validation, batch_size=batch_size, shuffle=True, collate_fn=helper.collate_fn)
-
 
 # ----------------------------------------------- Set Up the Model -----------------------------------------------------
 
@@ -97,36 +102,62 @@ else:
     optimizer = torch.optim.SGD(params, lr=lr)
 
 if epochs > 10:
-    step_size = round(epochs/10)
+    step_size = round(epochs / 10)
 else:
     step_size = 1
 
 # Learning Rate, lr decreases by half every step_size
 lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=0.5)
 
-
 # ----------------------------------------------- Train the Model ------------------------------------------------------
 
-# train_log = pd.DataFrame(columns=['Epoch', 'Learning_Rate', 'Loss', 'Loss_Classifier', 'Loss_BBox_Regression',
-#                                  'Loss_RPN_BBox_Regression', 'Time'])
+# Create Dataframe with epochs stats
+columns_epochs = ['epoch', 'lr', 'time',
+                  'loss_avg', 'loss_median', 'loss_max', 'loss_min',
+                  'loss_bb_regression_avg', 'loss_bb_regression_median',
+                  'loss_bb_regression_max', 'loss_bb_regression_min',
+                  'loss_classifier_avg', 'loss_classifier_median',
+                  'loss_classifier_max', 'loss_classifier_min',
+                  'loss_rpn_bb_regression_avg', 'loss_rpn_bb_regression_median',
+                  'loss_rpn_bb_regression_max', 'loss_rpn_bb_regression_min']
 
-for epoch in range(1, epochs+1):
-    # train for one epoch, printing every 2 iterations
-    training_results = train_one_epoch(model, optimizer, loader_train, device, epoch, print_freq=1)
+columns_iterations = ['epoch', 'iteration',  'lr', 'time',
+                      'loss_avg', 'loss_median', 'loss_max', 'loss_min',
+                      'loss_bb_regression_avg', 'loss_bb_regression_median',
+                      'loss_bb_regression_max', 'loss_bb_regression_min',
+                      'loss_classifier_avg', 'loss_classifier_median',
+                      'loss_classifier_max', 'loss_classifier_min',
+                      'loss_rpn_bb_regression_avg', 'loss_rpn_bb_regression_median',
+                      'loss_rpn_bb_regression_max', 'loss_rpn_bb_regression_min']
+
+train_epochs_log = pd.DataFrame(columns=columns_epochs)
+train_iterations_log = pd.DataFrame(columns=columns_iterations)
+
+# Train the network (saving the best model)
+for epoch in range(0, epochs):
+    # train for one epoch, printing every <print_freq> iterations
+    training_results, train_iterations_log = train_one_epoch(model, optimizer, loader_train, device, epoch,
+                                                             print_freq=1, df=train_iterations_log)
+
+    # add epoch logs to df
+    train_epochs_log = helper.df_add_epoch_log(train_epochs_log, epoch, training_results)
+
     # evaluate on the validation data set
-    evaluate(model, loader_validation, device=device)
+    mAP = evaluate(model, loader_validation, device=device)
+
+    # Check to keep best model
+    if mAP > best_mAP:
+        best_mAP = mAP
+        # Save model
+        torch.save(model.state_dict(), PATH + '/' + filename + '.pt')
+
     # update the learning rate
-    lr_scheduler.step() 
+    lr_scheduler.step()
 
+# ----------------------------------------------- Save Training Logs ---------------------------------------------------
 
-# ----------------------------------------------- Save the Model -------------------------------------------------------
-
-# Save model with current date
-now = datetime.now()
-d = now.strftime("%Y_%b_%d_%Hh_%mm")
-PATH = '../models/model_ces_'+d+'.pt'
-torch.save(model.state_dict(), PATH)
-
-
+# Save training logs
+train_epochs_log.to_csv(PATH + '/' + filename + '_epochs.csv', index=False, header=True)
+train_iterations_log.to_csv(PATH + '/' + filename + '_iterations.csv', index=False, header=True)
 
 
